@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timeline Presentation</title>
+
+<!-- Version-pinned reveal.js core styles -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.2/dist/reveal.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" />
+
+<style>
+  /* Kraftlauget brand palette, sampled directly from an actual deck slide:
+     near-black background, off-white body text, warm gold (#ecbd50) as
+     the primary accent. Roboto for headings/titles, Arial for body copy —
+     matches the deck's own type pairing exactly. */
+  :root{
+    --bg:#202020;
+    --surface:#262626;
+    --text:#f7f5ef;
+    --text-dim:#b9b6ac;
+    --text-faint:#726f66;
+    --line:#3a3a3a;
+    --tl-line:#4a4a44;
+    --accent:#ffb700;
+    --tl-duration:0.8s;
+    --tl-ease:cubic-bezier(0.65, 0, 0.35, 1);
+    --font-heading: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-body: Arial, Helvetica, "Segoe UI", sans-serif;
+    --font: var(--font-body);
+    /* A soft center glow, barely lighter than --bg, fading out to --bg at
+       the edges — the same subtle vignette the deck's own slides use.
+       Kept as its own token so both the base page and reveal.js's
+       viewport override (below) stay in sync. */
+    --bg-radial: radial-gradient(ellipse 80% 75% at 50% 42%, #333333 0%, #242424 45%, #181818 100%);
+  }
+
+  html, body{
+    background: var(--bg-radial);
+    margin: 0;
+    height: 100%;
+  }
+
+  /* reveal.js applies the .reveal-viewport class to <body> itself at
+     startup, and reveal.css hard-codes that class to a white background
+     (a class selector, so it beats our plain `body{...}` rule above on
+     specificity alone). Without this override the whole presentation
+     silently renders on white instead of the dark theme. */
+  .reveal-viewport{
+    background: var(--bg-radial);
+  }
+
+  .reveal{
+    font-family: var(--font);
+    color: var(--text);
+  }
+
+  .reveal .slides{
+    text-align: left;
+  }
+
+  .reveal .slides section{
+    height: 100%;
+    padding: 0;
+    top: 0 !important;
+  }
+
+  /* Three columns: text/icon zone, the centered vertical timeline, text/icon zone */
+  .timeline-stage{
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    width: 100%;
+  }
+
+  .zone{
+    flex: 1;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 48px;
+  }
+
+  .zone-left{ justify-content: flex-end; }
+  .zone-right{ justify-content: flex-start; }
+
+  /* Empty spacer inside each slide reserving the same horizontal gap the
+     persistent timeline overlay (below) visually occupies, so the
+     text/icon zones never creep under it. */
+  .spacer{
+    width: 170px;
+    min-width: 170px;
+    height: 100%;
+  }
+
+  /* The timeline (line + every dot + label) is a SINGLE persistent element
+     living outside the slides, not regenerated per slide. reveal.js's
+     Auto-Animate turned out to be unreliable for this piece (it manages
+     `transform` itself and fought our positioning, and its FLIP math
+     breaks on a zero-size container) — so instead we mutate this element's
+     styles directly on navigation and let a plain CSS `transition` (below)
+     animate `top`/size/opacity smoothly and reliably, just like any other
+     persistent DOM element. */
+  .timeline-overlay{
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* Wide enough to contain the line, every dot, and the widest date label
+     without clipping into the text/icon zones on either side. */
+  .timeline-col{
+    position: absolute;
+    left: 50%;
+    margin-left: -85px;
+    top: 0;
+    width: 170px;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .timeline-track{
+    position: absolute;
+    left: 34px;
+    top: 50%;
+    transition: top var(--tl-duration) var(--tl-ease);
+  }
+
+  .seg{
+    position: absolute;
+    left: -1.5px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tl-line);
+  }
+
+  .dot-marker{
+    position: absolute;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px var(--bg);
+    transition: top var(--tl-duration) var(--tl-ease),
+                left var(--tl-duration) var(--tl-ease),
+                width var(--tl-duration) var(--tl-ease),
+                height var(--tl-duration) var(--tl-ease),
+                background-color var(--tl-duration) var(--tl-ease),
+                opacity var(--tl-duration) var(--tl-ease);
+  }
+
+  .dot-label{
+    position: absolute;
+    left: 24px;
+    white-space: nowrap;
+    font-family: var(--font-heading);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    /* `top` is set (in JS) to the dot's exact center y — this transform is
+       what actually centers the label ON that point. A fixed pixel offset
+       instead of this would only line up for one specific font-size, and
+       the label's font-size changes per distance-from-active tier. */
+    transform: translateY(-50%);
+    transition: top var(--tl-duration) var(--tl-ease),
+                opacity var(--tl-duration) var(--tl-ease),
+                font-size var(--tl-duration) var(--tl-ease),
+                color var(--tl-duration) var(--tl-ease);
+  }
+
+  /* ---- Active-event branch (text block on one side, icon badge on the
+     other, alternating by event index) ---- */
+  .text-block{
+    max-width: 440px;
+  }
+
+  .event-date{
+    font-family: var(--font-heading);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .event-title{
+    font-family: var(--font-heading);
+    font-size: 3rem;
+    line-height: 1.1;
+    font-weight: 900;
+    margin: 0 0 22px 0;
+    color: var(--text);
+  }
+
+  .event-desc{
+    font-family: var(--font-body);
+    font-size: 1.35rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* Used instead of .event-desc when `description` is an array (see
+     data.js) — one bullet line per entry rather than a single paragraph. */
+  .event-desc-list{
+    font-family: var(--font-body);
+    font-size: 1.35rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+    margin: 0;
+    padding-left: 1.2em;
+  }
+
+  .event-desc-list li{
+    margin: 0 0 4px 0;
+  }
+
+  .event-desc-list li::marker{
+    color: var(--text-faint);
+  }
+
+  /* Milestones reached in this event, set via `milestones: [...]` (see
+     data.js) — visually distinct from the plain description: bold,
+     accent-colored, with a flag icon, so it reads as a callout rather
+     than more body text. */
+  .event-milestones{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
+  }
+
+  .milestone-item{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.01em;
+    opacity: 0.9;
+  }
+
+  .milestone-item svg{
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    stroke-width: 2;
+  }
+
+  /* Small row of circular headshots under an event's description, set via
+     `people: [{ name, image }]` (see data.js) to show who was involved. */
+  .people-row{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+  }
+
+  .people-avatar{
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+    border: 2px solid currentColor;
+    box-shadow: 0 0 0 3px var(--bg);
+    /* Same fix as .icon-badge below: pre-promote to a GPU layer so this
+       rounded, clipped image doesn't re-rasterize soft when it fades in
+       via Auto-Animate on slide navigation. */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    /* Starts invisible; each avatar's own inline `animation-delay` (set
+       in JS, staggered per person) makes them pop in one at a time,
+       timed to start only once the rest of the slide has settled. */
+    opacity: 0;
+    transform: translateZ(0) scale(0.5);
+  }
+
+  @keyframes peopleAvatarIn{
+    from{ opacity: 0; transform: translateZ(0) scale(0.5); }
+    to{ opacity: 1; transform: translateZ(0) scale(1); }
+  }
+
+  .icon-branch{
+    display: flex;
+    align-items: center;
+  }
+
+  .icon-branch.reverse{
+    flex-direction: row-reverse;
+  }
+
+  .connector{
+    width: 130px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  .icon-badge{
+    width: 88px;
+    height: 88px;
+    min-width: 88px;
+    border-radius: 50%;
+    border: 3px solid currentColor;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 0 0 6px rgba(255,255,255,0.05);
+    /* Clips any child (an image, mainly) to the badge's own curve. Without
+       this, a photo's own border-radius has to match the badge's inner
+       curve exactly or its corners poke out past the border ring. */
+    overflow: hidden;
+    /* This element fades in/out on every navigation via reveal.js's
+       Auto-Animate (see autoAnimateUnmatched below). A rounded + clipped
+       element that only gets GPU-layer-promoted *during* that transition
+       tends to re-rasterize at a softer resolution in Chromium/WebKit and
+       can stay looking soft afterwards. Promoting it to its own layer
+       up front, before any animation touches it, keeps it crisp. */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .icon-badge svg{
+    width: 38px;
+    height: 38px;
+    stroke: currentColor;
+  }
+
+  /* Photos are handled entirely separately from .icon-badge (above),
+     which is sized and shaped for small icon/text circles. Reusing that
+     one class for photos too — via a growing pile of shape/size/crop
+     overrides — was the root cause of a long chain of cropping and
+     sizing bugs. A photo badge instead just shows the image at its own
+     natural aspect ratio, capped by `badgeSize` (max-width, default
+     220px), with a border + radius (`badgeRadius`, default 20px) drawn
+     directly around it in the script. No object-fit, no forced box
+     shape — there's nothing to crop or distort. */
+  .badge-photo{
+    display: block;
+    box-shadow: 0 0 0 6px rgba(255,255,255,0.05);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
+  /* Purely structural wrapper for a multi-image slideshow (`images` in
+     data.js) — invisible, no border/background/radius of its own. Every
+     slide sits in the same grid cell to overlap for the crossfade; each
+     slide's own border+radius (above) is what's actually visible, and is
+     always correctly sized to that one image since nothing is shared or
+     stretched between slides. */
+  .photo-stack{
+    display: grid;
+    grid-template-areas: "stack";
+    justify-items: center;
+    align-items: center;
+  }
+
+  .photo-stack .badge-photo{
+    grid-area: stack;
+    opacity: 0;
+    transition: opacity 0.7s ease;
+  }
+
+  .photo-stack .badge-photo.is-active{
+    opacity: 1;
+  }
+
+  /* When an event supplies badgeText (a short number/amount or an emoji)
+     instead of an icon or photo. Sized wider than the plain icon badge so
+     short phrases like "415 000 kr" can wrap onto two lines. */
+  .icon-badge.has-text{
+    width: 140px;
+    height: 140px;
+    min-width: 140px;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  .badge-text{
+    text-align: center;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+
+  /* Presenter chrome */
+  .counter{
+    position: fixed;
+    bottom: 24px;
+    right: 32px;
+    font-family: var(--font);
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    z-index: 40;
+    background: rgba(28,28,28,0.85);
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+
+  .nav-controls{
+    position: fixed;
+    bottom: 22px;
+    left: 32px;
+    display: flex;
+    gap: 10px;
+    z-index: 40;
+  }
+
+  .nav-controls button,
+  .fullscreen-btn{
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(28,28,28,0.85);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    opacity: 0.7;
+  }
+
+  .nav-controls button:hover,
+  .fullscreen-btn:hover{
+    opacity: 1;
+    color: var(--text);
+    border-color: var(--text-dim);
+  }
+
+  .fullscreen-btn{
+    position: fixed;
+    bottom: 22px;
+    right: 140px;
+    z-index: 40;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .nav-controls button,
+    .fullscreen-btn{
+      transition: none;
+    }
+
+    .photo-stack .badge-photo{
+      transition: none;
+    }
+  }
+
+  /* Always-on brand mark, top-left, on every slide. The PNG already has
+     its own dark rounded chip baked in, so it reads on any background. */
+  .brand-logo{
+    position: fixed;
+    top: 24px;
+    left: 32px;
+    height: 34px;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+  <img class="brand-logo" src="images/kraftlauget-logo.png" alt="Kraftlauget" />
+
+  <div class="reveal">
+    <div class="slides" id="slides"></div>
+  </div>
+
+  <div class="counter" id="counter"></div>
+
+  <div class="nav-controls">
+    <button id="prevBtn" aria-label="Previous event">&#8249;</button>
+    <button id="nextBtn" aria-label="Next event">&#8250;</button>
+  </div>
+
+  <button class="fullscreen-btn" id="fullscreenBtn" aria-label="Toggle fullscreen">&#9974;</button>
+
+  <!-- Classic scripts (not modules) so they run synchronously and work when
+       index.html is opened directly via file:// — fetch()/XHR of local
+       files is blocked there, but loading a plain <script src> is not.
+       Version-pinned icon library (Lucide), rendered to inline SVG. -->
+  <script src="data.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
+
+  <script type="module">
+    // Version-pinned reveal.js core (ESM build)
+    import Reveal from 'https://cdn.jsdelivr.net/npm/reveal.js@6.0.2/dist/reveal.mjs';
+
+    // ---- Timeline geometry (shared by every generated slide) ----------------
+    const SPACING = 110; // vertical px between two consecutive dots
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.documentElement.style.setProperty('--tl-duration', reducedMotion ? '0.05s' : '0.8s');
+
+    function escapeHtml(str){
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function hexToRgba(hex, alpha){
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      if (!m) return `rgba(255, 183, 0, ${alpha})`; // falls back to --accent's own rgb
+      const [r, g, b] = m.slice(1).map(h => parseInt(h, 16));
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function accentFor(event){
+      return event.color || '#ffb700';
+    }
+
+    // Distance-from-active tiers: how much a dot/label fades and shrinks
+    // the further it is from the event currently in focus.
+    const TIERS = [
+      { size: 22, opacity: 1,    fontSize: '1rem',    fontWeight: 700 },
+      { size: 14, opacity: 0.8,  fontSize: '0.9rem',  fontWeight: 500 },
+      { size: 10, opacity: 0.45, fontSize: '0.8rem',  fontWeight: 400 },
+      { size: 8,  opacity: 0.25, fontSize: '0.75rem', fontWeight: 400 }
+    ];
+    function tierFor(distance){
+      return TIERS[Math.min(distance, TIERS.length - 1)];
+    }
+
+    // Applies the current activeIndex's sizes/colors to the persistent
+    // dot/label/track elements. A plain CSS `transition` (declared in the
+    // stylesheet) animates every one of these changes smoothly — this is
+    // the actual "camera travel" effect, driven by us, not auto-animate.
+    function updateTimeline(events, activeIndex){
+      document.getElementById('timelineTrack').style.top = `calc(50% - ${activeIndex * SPACING}px)`;
+
+      events.forEach((event, index) => {
+        const distance = Math.abs(index - activeIndex);
+        const tier = tierFor(distance);
+        const isActive = index === activeIndex;
+        const color = isActive ? accentFor(event) : 'var(--text-dim)';
+
+        const marker = document.getElementById(`dotMarker-${event.id}`);
+        marker.style.width = `${tier.size}px`;
+        marker.style.height = `${tier.size}px`;
+        marker.style.left = `${-tier.size / 2}px`;
+        marker.style.top = `${index * SPACING - tier.size / 2}px`;
+        marker.style.opacity = tier.opacity;
+        marker.style.backgroundColor = color;
+        marker.style.boxShadow = isActive
+          ? `0 0 0 4px var(--bg), 0 0 0 9px ${hexToRgba(accentFor(event), 0.3)}, 0 0 22px ${hexToRgba(accentFor(event), 0.35)}`
+          : '0 0 0 4px var(--bg)';
+
+        const label = document.getElementById(`dotLabel-${event.id}`);
+        label.style.top = `${index * SPACING}px`;
+        label.style.opacity = tier.opacity;
+        label.style.fontSize = tier.fontSize;
+        label.style.fontWeight = tier.fontWeight;
+        label.style.color = isActive ? color : 'var(--text)';
+      });
+    }
+
+    function buildOverlay(events){
+      const segs = events.map((event, index) => {
+        const top = (index - 0.5) * SPACING;
+        return `<span class="seg" style="top:${top}px; height:${SPACING}px;"></span>`;
+      }).join('');
+
+      const dots = events.map(event => `
+        <span class="dot-marker" id="dotMarker-${escapeHtml(event.id)}"></span>
+        <span class="dot-label" id="dotLabel-${escapeHtml(event.id)}">${escapeHtml(event.date)}</span>`).join('');
+
+      return `
+        <div class="timeline-overlay">
+          <div class="timeline-col">
+            <div class="timeline-track" id="timelineTrack">
+              ${segs}
+              ${dots}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // No data-id on the text/icon content below: its date/title/description
+    // (or icon) are completely different on every slide, and different text
+    // content between "matched" elements is exactly what auto-animate
+    // struggles with — instead of a smooth fade spread across the whole
+    // transition, it held the old frame and popped the new one in late.
+    // Leaving these unmatched lets `autoAnimateUnmatched` fade them in/out
+    // as plain elements, over the full duration, every time.
+    function peopleRowHtml(event, color){
+      if (!Array.isArray(event.people) || event.people.length === 0) return '';
+      // Wait just long enough for the slide's own content transition to
+      // finish before the first avatar pops in, then stagger the rest in
+      // one at a time, in order.
+      const baseDelay = reducedMotion ? 0.05 : 0.45;
+      const stagger = reducedMotion ? 0 : 0.1;
+      const duration = reducedMotion ? 0.05 : 0.35;
+      const avatars = event.people.map((person, i) => `
+        <img class="people-avatar" src="${escapeHtml(person.image)}" alt="${escapeHtml(person.name)}" title="${escapeHtml(person.name)}" style="color:${color};animation:peopleAvatarIn ${duration}s var(--tl-ease) ${baseDelay + i * stagger}s both;" />`).join('');
+      return `<div class="people-row">${avatars}</div>`;
+    }
+
+    // `description` is normally a plain string (one paragraph). Passing
+    // an array instead renders one bullet <li> per entry — handy for a
+    // "- something" style list rather than a single sentence.
+    function bulletListHtml(lines){
+      const items = lines.map(line => `<li>${escapeHtml(line)}</li>`).join('');
+      return `<ul class="event-desc-list">${items}</ul>`;
+    }
+
+    // `event.description` is usually a paragraph string, but (for
+    // backward compat) can itself be an array for a bullet-only slide.
+    // `event.descriptions` is a SEPARATE optional array that renders
+    // alongside `description` — use it when a slide wants both a plain
+    // paragraph AND a bulleted list underneath it.
+    function descriptionHtml(event){
+      let html = '';
+      if (Array.isArray(event.description)){
+        html += bulletListHtml(event.description);
+      } else if (event.description){
+        html += `<p class="event-desc">${escapeHtml(event.description)}</p>`;
+      }
+      if (Array.isArray(event.descriptions) && event.descriptions.length > 0){
+        html += bulletListHtml(event.descriptions);
+      }
+      return html;
+    }
+
+    // Renders `milestones: [...]` (see data.js) as a distinct, highlighted
+    // callout list — one flag-icon line per entry — separate from the
+    // plain description.
+    function milestonesHtml(event, color){
+      if (!Array.isArray(event.milestones) || event.milestones.length === 0) return '';
+      const items = event.milestones.map(m => `
+        <div class="milestone-item" style="color:${color};">
+          <i data-lucide="flag"></i>
+          <span>${escapeHtml(m)}</span>
+        </div>`).join('');
+      return `<div class="event-milestones">${items}</div>`;
+    }
+
+    function textBlockHtml(event, color){
+      return `
+        <div class="text-block">
+          <div class="event-date" style="color:${color};">${escapeHtml(event.date)}</div>
+          <h1 class="event-title">${escapeHtml(event.title)}</h1>
+          ${descriptionHtml(event)}
+          ${milestonesHtml(event, color)}
+          ${peopleRowHtml(event, color)}
+        </div>`;
+    }
+
+    // Builds one `.badge-photo` <img> — natural aspect ratio, capped by
+    // `badgeSize` (max-width, default 220px), bordered + rounded by
+    // `radius` (px). No object-fit, no forced box shape: whatever the
+    // image's own dimensions work out to at that width is what shows.
+    // `padding` (px, default 0) insets the image from its own border —
+    // like a picture mat — for a mark that needs breathing room, as
+    // opposed to a photo/graphic that should sit edge-to-edge.
+    function photoImgHtml(src, sizing, color, extraClass){
+      const pad = sizing.padding || 0;
+      const padStyle = typeof pad === 'number' ? `${pad}px` : pad;
+      const style = `max-width:${sizing.size}px;border:${sizing.border}px solid ${color};border-radius:${sizing.radius}px;padding:${padStyle};box-sizing:border-box;`;
+      return `<img class="badge-photo${extraClass || ''}" src="${escapeHtml(src)}" alt="" style="${style}" />`;
+    }
+
+    function iconBranchHtml(event, color, side){
+      let badgeInner;
+      const hasImages = Array.isArray(event.images) && event.images.length > 0;
+      if (hasImages || event.image){
+        // Photos are plain, separate elements (see .badge-photo /
+        // .photo-stack in the stylesheet) — not the small icon/text
+        // .icon-badge circle used below. `badgeSize` caps width (default
+        // 220px, height always follows naturally), `badgeRadius` sets
+        // the corner rounding (default 20px; use a large value like 999
+        // for a fully round badge on a roughly-square image).
+        const size = event.badgeSize || 220;
+        const radius = event.badgeRadius !== undefined ? event.badgeRadius : 20;
+        const border = 4;
+        if (hasImages){
+          // `images` stacks every photo in the same spot (via .photo-stack)
+          // and the slideshow controller (see startSlideshows) flips which
+          // one is opacity:1 every `imageCycleSeconds` (default 3s). Each
+          // photo keeps its own natural size/border — nothing is shared or
+          // stretched between slides, so a square logo and a wide chart
+          // can sit in the same slideshow without either one being
+          // squashed or cropped. Each entry can be a plain path string, or
+          // `{ src, padding }` when that one slide needs its own inset
+          // (e.g. a logo mark next to an edge-to-edge photo).
+          const slides = event.images.map((item, i) => {
+            const src = typeof item === 'string' ? item : item.src;
+            const padding = typeof item === 'string' ? 0 : item.padding;
+            return photoImgHtml(src, { size, radius, border, padding }, color, i === 0 ? ' is-active' : '');
+          }).join('');
+          const intervalMs = (event.imageCycleSeconds || 3) * 1000;
+          badgeInner = `<span class="photo-stack" data-interval="${intervalMs}">${slides}</span>`;
+        } else {
+          badgeInner = photoImgHtml(event.image, { size, radius, border, padding: event.badgePadding }, color, '');
+        }
+        return `
+        <div class="icon-branch ${side === 'left' ? 'reverse' : ''}">
+          <span class="connector" style="background:${color};"></span>
+          ${badgeInner}
+        </div>`;
+      }
+      // Non-photo badges (a plain icon, or badgeText like an emoji or an
+      // amount) keep using the small fixed-size .icon-badge circle.
+      let badgeClass = '';
+      if (event.badgeText){
+        // Short content (an emoji, typically 1-2 code points) reads best
+        // big; longer content (an amount like "415 000 kr") needs a
+        // smaller size so it can wrap onto two lines instead of overflowing.
+        const isShort = Array.from(event.badgeText).length <= 2;
+        const fontSize = isShort ? '3.4rem' : '1.4rem';
+        badgeInner = `<span class="badge-text" style="font-size:${fontSize};">${escapeHtml(event.badgeText)}</span>`;
+        badgeClass = ' has-text';
+      } else {
+        badgeInner = `<i data-lucide="${escapeHtml(event.icon || 'circle')}"></i>`;
+      }
+      const sizeStyle = event.badgeSize
+        ? `width:${event.badgeSize}px;height:${event.badgeSize}px;min-width:${event.badgeSize}px;`
+        : '';
+      const paddingStyle = event.badgePadding !== undefined
+        ? `padding:${event.badgePadding}px;box-sizing:border-box;`
+        : '';
+      return `
+        <div class="icon-branch ${side === 'left' ? 'reverse' : ''}">
+          <span class="connector" style="background:${color};"></span>
+          <span class="icon-badge${badgeClass}" style="color:${color};${sizeStyle}${paddingStyle}">
+            ${badgeInner}
+          </span>
+        </div>`;
+    }
+
+    function buildSlideSection(events, activeIndex){
+      const active = events[activeIndex];
+      const activeColor = accentFor(active);
+
+      // Even index -> text on the left, icon on the right. Odd -> flipped.
+      const textOnLeft = activeIndex % 2 === 0;
+      const leftContent = textOnLeft ? textBlockHtml(active, activeColor) : iconBranchHtml(active, activeColor, 'left');
+      const rightContent = textOnLeft ? iconBranchHtml(active, activeColor, 'right') : textBlockHtml(active, activeColor);
+
+      return `
+        <section data-auto-animate>
+          <div class="timeline-stage">
+            <div class="zone zone-left">${leftContent}</div>
+            <div class="spacer"></div>
+            <div class="zone zone-right">${rightContent}</div>
+          </div>
+        </section>`;
+    }
+
+    function getEvents(){
+      const events = window.TIMELINE_EVENTS;
+      if (!Array.isArray(events) || events.length === 0){
+        throw new Error('data.js must set window.TIMELINE_EVENTS to a non-empty array of events');
+      }
+      return events;
+    }
+
+    // reveal.js (with autoAnimate on) keeps slides alive in the DOM and
+    // toggles them via opacity/positioning rather than display:none, so a
+    // CSS keyframe animation with fill-mode:both — like the people-avatar
+    // pop-in — only ever plays once and then just sits frozen at its end
+    // state; navigating back to the slide doesn't retrigger it. Forcing a
+    // reflow between clearing and restoring `animation` is the standard
+    // way to make the browser actually restart it from frame zero.
+    function replayPeopleAvatars(slideEl){
+      if (!slideEl) return;
+      slideEl.querySelectorAll('.people-avatar').forEach(img => {
+        const anim = img.style.animation;
+        img.style.animation = 'none';
+        void img.offsetWidth; // force reflow so the "none" is committed
+        img.style.animation = anim;
+      });
+    }
+
+    // Cycles a multi-image badge (`images: [...]` in data.js) through its
+    // slides, 3s each, looping. Tracks its own interval ids so they can be
+    // torn down on navigation — since reveal.js (with autoAnimate on)
+    // keeps every slide alive in the DOM rather than removing inactive
+    // ones, an interval left running would just keep ticking forever in
+    // the background otherwise, for every slide you've ever visited.
+    let slideshowIntervals = [];
+
+    function stopSlideshows(){
+      slideshowIntervals.forEach(id => clearInterval(id));
+      slideshowIntervals = [];
+    }
+
+    function startSlideshows(slideEl){
+      if (!slideEl) return;
+      slideEl.querySelectorAll('.photo-stack').forEach(stack => {
+        const slides = stack.querySelectorAll('.badge-photo');
+        if (slides.length < 2) return; // nothing to cycle
+        // Always reset to slide 0 before (re)starting. Without this, a
+        // slideshow left mid-cycle (say, showing image 2) when you
+        // navigate away keeps that DOM state — the section is only
+        // hidden, never torn down — so next time you land here, this
+        // interval's own `active` counter would start from 0 while the
+        // DOM is still actually showing image 2, and the two drift out
+        // of sync (can look stuck, or cycle to the "wrong" next image).
+        let active = 0;
+        slides.forEach((slide, i) => slide.classList.toggle('is-active', i === 0));
+        const intervalMs = parseInt(stack.dataset.interval, 10) || 3000;
+        const id = setInterval(() => {
+          slides[active].classList.remove('is-active');
+          active = (active + 1) % slides.length;
+          slides[active].classList.add('is-active');
+        }, intervalMs);
+        slideshowIntervals.push(id);
+      });
+    }
+
+    function updateCounter(index, total){
+      document.getElementById('counter').textContent = `${index + 1} / ${total}`;
+    }
+
+    // reveal.js supports deep-linking to a slide via "#/N" in the URL (0
+    // based) and will jump straight there on load. We read that same hash
+    // ourselves up front so the persistent timeline overlay is built
+    // already-correct for that slide, instead of starting at event 0 and
+    // only fixing itself once reveal.js's own async init finishes — which
+    // would otherwise animate an unwanted jump on first paint.
+    function getInitialIndexFromHash(total){
+      const m = /^#\/(\d+)/.exec(window.location.hash);
+      if (!m) return 0;
+      const n = parseInt(m[1], 10);
+      return Number.isFinite(n) && n >= 0 && n < total ? n : 0;
+    }
+
+    (function init(){
+      let events;
+      try{
+        events = getEvents();
+      } catch (err){
+        document.getElementById('slides').innerHTML =
+          `<section><div class="timeline-stage"><div class="zone zone-right"><div class="text-block">
+             <div class="event-date">ERROR</div>
+             <h1 class="event-title">Could not load events</h1>
+             <p class="event-desc">${escapeHtml(err.message)}. Make sure
+             <code>data.js</code> is in the same folder as this file.</p>
+           </div></div></div></section>`;
+        return;
+      }
+
+      document.getElementById('slides').innerHTML =
+        buildOverlay(events) +
+        events.map((_, i) => buildSlideSection(events, i)).join('');
+
+      updateTimeline(events, getInitialIndexFromHash(events.length));
+
+      // Convert every <i data-lucide="..."> placeholder into a real inline
+      // SVG *before* Reveal reads the DOM, so Auto-Animate has real,
+      // measurable elements to animate from the very first transition.
+      if (window.lucide) window.lucide.createIcons();
+
+      Reveal.initialize({
+        width: 1280,
+        height: 720,
+        margin: 0.02,
+        minScale: 0.2,
+        maxScale: 2,
+        controls: false,
+        progress: false,
+        hash: true,
+        keyboard: true,
+        center: false,
+        transition: 'none',
+        autoAnimate: true,
+        autoAnimateEasing: 'cubic-bezier(0.65, 0, 0.35, 1)',
+        autoAnimateDuration: reducedMotion ? 0.001 : 0.8,
+        autoAnimateUnmatched: true
+      }).then(() => {
+        const total = Reveal.getTotalSlides();
+        const startIndex = Reveal.getIndices().h;
+        updateCounter(startIndex, total);
+        // Reconciles the overlay with wherever reveal.js's own hash
+        // parsing actually landed, in the rare case it disagrees with our
+        // upfront guess (e.g. a malformed or out-of-range hash).
+        updateTimeline(events, startIndex);
+        replayPeopleAvatars(Reveal.getCurrentSlide());
+        startSlideshows(Reveal.getCurrentSlide());
+
+        Reveal.on('slidechanged', event => {
+          updateCounter(event.indexh, total);
+          updateTimeline(events, event.indexh);
+          replayPeopleAvatars(event.currentSlide);
+          stopSlideshows();
+          startSlideshows(event.currentSlide);
+        });
+
+        document.getElementById('prevBtn').addEventListener('click', () => Reveal.prev());
+        document.getElementById('nextBtn').addEventListener('click', () => Reveal.next());
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+          if (!document.fullscreenElement){
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            document.exitFullscreen();
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
