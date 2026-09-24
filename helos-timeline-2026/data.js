@@ -218,8 +218,8 @@ window.TIMELINE_EVENTS = [
     date: "H1 2025",
     title: "Bygging av MVP",
     descriptions: ["Rådgivermodul", "Innbyggerløsning", "Regelmotor", "Brukertesting"],
-    image: "images/triage-økosystem.png",
-    badgeSize: 420
+    images: ["images/bygging-av-mvp.png", "images/helos-innbygger.png"],
+    badgeSize: 400
   },
   {
     id: "event-800",
@@ -258,14 +258,15 @@ window.TIMELINE_EVENTS = [
       "images/brukertest-3-option-2.png",
       "images/brukertest-3-option-3.png"
     ],
-    badgeSize: 260
+    badgeSize: 400
   },
   {
     id: "event-7",
     date: "Jun 2025",
     title: "Første ende-til-ende-integrasjon",
     description: "Medisinske eksperter kan starte for fullt å produsere innhold, og bruker også selve løsningen i testing. Erstatter Appfarm-prototypen.",
-    icon: "rocket"
+    image: "images/helos-and-heloshub.png",
+    badgeSize: 400
   },
   {
     id: "event-8",
@@ -276,7 +277,7 @@ window.TIMELINE_EVENTS = [
       { src: "images/helos-logo.png", padding: 24 },
       "images/helos-icons.png"
     ],
-    badgeSize: 180,
+    badgeSize: 350,
     people: [
       { name: "Mari", image: "images/people/faces/mari.png" },
       { name: "Julia Rahlff", image: "images/people/faces/julia-rahlff.png" }
@@ -336,10 +337,9 @@ window.TIMELINE_EVENTS = [
       "Oppstart CE-prosess"
     ],
     image: "images/helos-hub.png",
-    badgeSize: 320,
+    badgeSize: 400,
     people: [
-      { name: "Øystein Malt", image: "images/people/faces/ystein-malt.png" },
-      { name: "Geir-Magne Kvalsren", image: "images/people/faces/geir-magne-kvalsren.png" }
+      { name: "Øystein Malt", image: "images/people/faces/ystein-malt.png" }
     ]
   },
   {
@@ -359,12 +359,16 @@ window.TIMELINE_EVENTS = [
       "Møter med Helsedirektoratet, kommuner",
       "Businesscase"
     ],
-    image: "images/helos-no.png"
+    image: "images/helos-no.png",
+    people: [
+      { name: "Geir-Magne Kvalsren", image: "images/people/faces/geir-magne-kvalsren.png" }
+    ]
   },
   {
     id: "event-807",
     date: "Mai 2026",
     title: "Teamet nedskaleres",
+    badgeSize: 400,
     image: "images/team-photo.png"
   },
   {
@@ -372,9 +376,8 @@ window.TIMELINE_EVENTS = [
     date: "Nå",
     title: "Der vi står nå",
     description: "Teamet jobber mot å gjøre Helos klar for CE-merking gjennom et notified body (teknisk kontrollorgan).",
-    image: "images/ce-mark.png",
-    badgeSize: 180,
-    badgeRadius: 999,
+    image: "images/qr.png",
+    badgeSize: 400,
     people: [
       { name: "Helge Andre Sletten", image: "images/people/faces/helge-andre-sletten.png" },
       { name: "Tor-Erik Stakset", image: "images/people/faces/tor-erik-stakset.png" }
