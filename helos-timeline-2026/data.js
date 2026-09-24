@@ -234,7 +234,7 @@ window.TIMELINE_EVENTS = [
     id: "event-801",
     date: "Mar 2025",
     title: "Teamet endres",
-    description: "Ahl går ut i permisjon, Amar slutter. Får inn 2 svensker fra Generate.",
+    description: "Ahl går ut i pappaperm, Amar slutter. Får inn 2 svensker fra Generate.",
     image: "images/generate-group-logo.png"
   },
   {
